@@ -884,20 +884,38 @@ function renderGPSMap() {
 
   // --- Draw waypoints ---
   _gpsWpts = L.layerGroup();
+  // --- Draw waypoints --- (Replace the truncated part with this)
+  _gpsWpts = L.layerGroup();
   waypoints.forEach(wpt => {
     // Build a rich popup with name + desc + elevation
-    let popupHtml = `<b style="color:var(--primary)">${esc(wpt.name)}</b>`;
-    if (wpt.desc && wpt.desc !== wpt.name)
-      popupHtml += `<br><span style="color:#8888aa;font-size:0.85em">${esc(wpt.desc)}</span>`;
-    if (wpt.sym)
-      popupHtml += `<br><span style="color:#6b6b8a;font-size:0.8em">&#128205; ${esc(wpt.sym)}</span>`;
-    if (wpt.ele)
-      popupHtml += `<br><span style="color:#6b6b8a;font-size:0.8em">&#8679; ${wpt.ele.toFixed(1)} m</span>`;
+    let popupHtml = `
+      <div style="font-family: sans-serif; min-width: 120px;">
+        <b style="color:#00d4ff; display:block; margin-bottom:4px;">${esc(wpt.name)}</b>
+        ${wpt.desc ? `<div style="font-size: 0.9em; margin-bottom:4px;">${esc(wpt.desc)}</div>` : ''}
+        ${wpt.ele !== null ? `<div style="font-size: 0.8em; color: #888;">Elevation: ${wpt.ele.toFixed(1)}m</div>` : ''}
+      </div>
+    `;
 
-    L.marker([wpt.lat, wpt.lon])
-     .bindPopup(popupHtml)
-     .addTo(_gpsWpts);
+    // Drop a yellow marker for waypoints
+    L.circleMarker([wpt.lat, wpt.lon], {
+      radius: 6,
+      fillColor: '#ffa502',
+      color: '#222',
+      weight: 1,
+      fillOpacity: 0.8
+    })
+    .bindPopup(popupHtml)
+    .addTo(_gpsWpts);
   });
+
+  _gpsWpts.addTo(map);
+
+  // Fallback: If there was no track line, make sure we center the map on the waypoints
+  if (track.length === 0 && waypoints.length > 0) {
+    const bounds = L.latLngBounds(waypoints.map(wpt => [wpt.lat, wpt.lon]));
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }
+}
   _gpsWpts.addTo(map);
 
   // If no track but have waypoints — fit to waypoints
