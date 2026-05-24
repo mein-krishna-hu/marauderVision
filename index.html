@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarauderEx Vision — ESP32 Data Dashboard</title>
+  <meta name="description" content="Offline data analysis dashboard for ESP32 MarauderEx SD card captures. Visualize wardrives, PCAP packets, AirTags, GPS tracks and more.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">☠</div>
+      <div class="logo-text">
+        <span class="logo-main">Marauder</span>
+        <span class="logo-sub">Vision</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+        <span class="nav-icon">⬡</span>
+        <span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-page="wardrive" onclick="navigate('wardrive')">
+        <span class="nav-icon">🗺</span>
+        <span class="nav-label">Wardrive Map</span>
+      </button>
+      <button class="nav-item" data-page="pcap" onclick="navigate('pcap')">
+        <span class="nav-icon">📡</span>
+        <span class="nav-label">PCAP Viewer</span>
+      </button>
+      <button class="nav-item" data-page="devices" onclick="navigate('devices')">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">Devices</span>
+      </button>
+      <button class="nav-item" data-page="gps" onclick="navigate('gps')">
+        <span class="nav-icon">🛰</span>
+        <span class="nav-label">GPS Tracks</span>
+      </button>
+      <button class="nav-item" data-page="scanlogs" onclick="navigate('scanlogs')">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Scan Logs</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="version-badge">ESP32 MarauderEx v1.0</div>
+      <div class="footer-note">100% offline — no data leaves your device</div>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="main-content" id="main">
+
+    <!-- Drop Overlay -->
+    <div class="drop-overlay" id="dropOverlay">
+      <div class="drop-zone-box">
+        <div class="drop-icon">📂</div>
+        <h2>Drop SD Card Files</h2>
+        <p>Release to load <span class="chip">.pcap</span> <span class="chip">.log</span> <span class="chip">.gpx</span> files</p>
+      </div>
+    </div>
+
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <h1 class="page-title" id="pageTitle">Dashboard</h1>
+        <span class="page-subtitle" id="pageSubtitle">Overview of captured data</span>
+      </div>
+      <div class="header-right">
+        <div class="file-status" id="fileStatus">No files loaded</div>
+        <button class="btn-load" onclick="document.getElementById('fileInput').click()">
+          ⊕ Load Files
+        </button>
+        <input type="file" id="fileInput" multiple accept=".pcap,.log,.gpx" style="display:none" onchange="handleFileInput(this.files)">
+      </div>
+    </header>
+
+    <!-- Page Container -->
+    <div class="page-container">
+
+      <!-- ===== DASHBOARD ===== -->
+      <section class="page active" id="page-dashboard">
+
+        <div class="welcome-banner" id="welcomeBanner">
+          <div class="welcome-content">
+            <div class="welcome-badge">ESP32 MarauderEx</div>
+            <h2>Data Analysis Dashboard</h2>
+            <p>Load your SD card files using the button above, or drag and drop them anywhere on the page. This tool runs entirely in your browser — no data is ever uploaded.</p>
+            <div class="supported-files">
+              <span class="file-badge pcap">.pcap — Packet captures</span>
+              <span class="file-badge log">.log — Wardrive &amp; scan data</span>
+              <span class="file-badge gpx">.gpx — GPS tracks</span>
+            </div>
+          </div>
+          <div class="welcome-art">☠</div>
+        </div>
+
+        <div class="stats-grid" id="statsGrid" style="display:none">
+          <div class="stat-card primary">
+            <div class="stat-icon">📡</div>
+            <div class="stat-value" id="val-aps">0</div>
+            <div class="stat-label">Access Points</div>
+          </div>
+          <div class="stat-card danger">
+            <div class="stat-icon">🔓</div>
+            <div class="stat-value" id="val-open">0</div>
+            <div class="stat-label">Open Networks</div>
+          </div>
+          <div class="stat-card secondary">
+            <div class="stat-icon">📦</div>
+            <div class="stat-value" id="val-packets">0</div>
+            <div class="stat-label">Packets Captured</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-icon">🏷</div>
+            <div class="stat-value" id="val-airtags">0</div>
+            <div class="stat-label">AirTags Detected</div>
+          </div>
+        </div>
+
+        <div class="charts-row" id="chartsRow" style="display:none">
+          <div class="chart-card">
+            <h3 class="chart-title">Security Distribution</h3>
+            <div class="chart-wrapper">
+              <canvas id="secChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3 class="chart-title">Frame Types</h3>
+            <div class="chart-wrapper">
+              <canvas id="frameChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3 class="chart-title">Top Channels</h3>
+            <div class="chart-wrapper">
+              <canvas id="chanChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="loaded-files-section" id="loadedFilesSection" style="display:none">
+          <h3 class="section-title">⬡ Loaded Files</h3>
+          <div class="files-grid" id="filesGrid"></div>
+        </div>
+
+      </section>
+
+      <!-- ===== WARDRIVE MAP ===== -->
+      <section class="page" id="page-wardrive">
+        <div class="map-controls">
+          <div class="filter-group">
+            <label>Device Type</label>
+            <select id="typeFilter" onchange="applyWardriveFilter()">
+              <option value="all">All Devices</option>
+              <option value="WIFI" selected>WiFi Only</option>
+              <option value="GSM">GSM Cellular</option>
+              <option value="LTE">LTE Cellular</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Security</label>
+            <select id="secFilter" onchange="applyWardriveFilter()">
+              <option value="all">All Types</option>
+              <option value="open">Open</option>
+              <option value="wep">WEP</option>
+              <option value="wpa">WPA</option>
+              <option value="wpa2">WPA2</option>
+              <option value="wpa3">WPA3</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Channel</label>
+            <select id="chanFilter" onchange="applyWardriveFilter()">
+              <option value="all">All Channels</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Min RSSI</label>
+            <input type="range" id="rssiFilter" min="-100" max="-20" value="-100" oninput="applyWardriveFilter(); document.getElementById('rssiVal').textContent = this.value">
+            <span id="rssiVal" class="range-val">-100</span> dBm
+          </div>
+          <div class="map-legend">
+            <span class="legend-item"><span class="legend-dot open"></span>Open</span>
+            <span class="legend-item"><span class="legend-dot wep"></span>WEP</span>
+            <span class="legend-item"><span class="legend-dot wpa"></span>WPA</span>
+            <span class="legend-item"><span class="legend-dot wpa2"></span>WPA2</span>
+            <span class="legend-item"><span class="legend-dot wpa3"></span>WPA3</span>
+            <span class="legend-item"><span class="legend-dot cellular"></span>Cellular</span>
+          </div>
+        </div>
+        <div class="map-container" id="wardriveMap"></div>
+        <div class="map-stats" id="wardriveStats"></div>
+      </section>
+
+      <!-- ===== PCAP VIEWER ===== -->
+      <section class="page" id="page-pcap">
+        <div class="pcap-controls">
+          <div class="filter-group">
+            <label>File</label>
+            <select id="pcapFileSelect" onchange="renderPcapTable()">
+              <option value="">Select PCAP file...</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Frame Type</label>
+            <select id="frameFilter" onchange="renderPcapTable()">
+              <option value="all">All Frames</option>
+              <option value="Beacon">Beacon</option>
+              <option value="Probe Request">Probe Request</option>
+              <option value="Probe Response">Probe Response</option>
+              <option value="Deauthentication">Deauthentication</option>
+              <option value="Disassociation">Disassociation</option>
+              <option value="Authentication">Authentication</option>
+              <option value="Data">Data</option>
+              <option value="EAPOL">EAPOL</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Search MAC</label>
+            <input type="text" id="macSearch" placeholder="aa:bb:cc:dd:ee:ff" oninput="renderPcapTable()" class="mac-input">
+          </div>
+        </div>
+        <div class="pcap-stats-row" id="pcapStatsRow"></div>
+        <div class="table-wrapper">
+          <table class="data-table" id="pcapTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Time (s)</th>
+                <th>Type</th>
+                <th>Subtype</th>
+                <th>Source MAC</th>
+                <th>Destination MAC</th>
+                <th>BSSID</th>
+                <th>SSID</th>
+                <th>Bytes</th>
+              </tr>
+            </thead>
+            <tbody id="pcapTableBody">
+              <tr><td colspan="9" class="empty-row">Load a .pcap file to begin</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== DEVICES ===== -->
+      <section class="page" id="page-devices">
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tab-btn-aps" onclick="switchDeviceTab('aps', this)">📡 Access Points</button>
+          <button class="tab-btn" id="tab-btn-airtags" onclick="switchDeviceTab('airtags', this)">🏷 AirTags</button>
+          <button class="tab-btn" id="tab-btn-ssids" onclick="switchDeviceTab('ssids', this)">📝 SSIDs</button>
+        </div>
+
+        <!-- AP Tab -->
+        <div class="tab-content active" id="tab-aps">
+          <div class="table-controls">
+            <input type="text" id="apSearch" placeholder="Search SSID, BSSID, manufacturer..." oninput="renderAPTable()" class="search-input">
+            <select id="apSecFilter" onchange="renderAPTable()">
+              <option value="all">All Security Types</option>
+              <option value="0">Open</option>
+              <option value="1">WEP</option>
+              <option value="2">WPA</option>
+              <option value="3">WPA2</option>
+              <option value="4">WPA3</option>
+            </select>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>SSID</th>
+                  <th>BSSID</th>
+                  <th>Channel</th>
+                  <th>RSSI</th>
+                  <th>Security</th>
+                  <th>WPS</th>
+                  <th>Packets</th>
+                  <th>Manufacturer</th>
+                </tr>
+              </thead>
+              <tbody id="apTableBody">
+                <tr><td colspan="8" class="empty-row">Load APs_N.log to see access points</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- AirTag Tab -->
+        <div class="tab-content" id="tab-airtags">
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>MAC Address</th>
+                  <th>RSSI</th>
+                  <th>Payload Size</th>
+                  <th>Payload (hex)</th>
+                </tr>
+              </thead>
+              <tbody id="airtagTableBody">
+                <tr><td colspan="5" class="empty-row">Load Airtags_N.log to see AirTags</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SSID Tab -->
+        <div class="tab-content" id="tab-ssids">
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>SSID</th>
+                </tr>
+              </thead>
+              <tbody id="ssidTableBody">
+                <tr><td colspan="2" class="empty-row">Load SSIDs_N.log to see SSID list</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== GPS TRACKS ===== -->
+      <section class="page" id="page-gps">
+        <div class="gps-controls">
+          <div class="filter-group">
+            <label>Track File</label>
+            <select id="gpxSelect" onchange="renderGPSMap()">
+              <option value="">Select GPX file...</option>
+            </select>
+          </div>
+          <div class="gps-info" id="gpsInfo"></div>
+        </div>
+        <div class="map-container" id="gpsMap"></div>
+      </section>
+
+      <!-- ===== SCAN LOGS ===== -->
+      <section class="page" id="page-scanlogs">
+        <div class="scanlog-controls">
+          <div class="filter-group">
+            <label>Log File</label>
+            <select id="scanLogSelect" onchange="renderScanLog()">
+              <option value="">Select scan log file...</option>
+            </select>
+          </div>
+        </div>
+        <div class="log-viewer" id="logViewer">
+          <span class="empty-row-inline">Load a scan .log file (ping, port, SSH, ARP, etc.) to view results</span>
+        </div>
+      </section>
+
+    </div><!-- /page-container -->
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
