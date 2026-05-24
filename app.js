@@ -357,12 +357,9 @@ function getSecurityLevel(authMode) {
 // ============================================================
 function parseGPX(text) {
   try {
-    // FIX: Strip XML namespaces so DOM queries work cleanly
-    const cleanText = text.replace(/xmlns(:\w+)?="[^"]*"/g, '');
-    const doc = new DOMParser().parseFromString(cleanText, 'application/xml');
-    
-    const track = [], waypoints = [];
-    let routeName = '';
+    const doc  = new DOMParser().parseFromString(text, 'application/xml');
+    const track= [], waypoints = [];
+    let   routeName = '';
 
     // --- Track points: <trk><trkseg><trkpt> (ESP32 Marauder tracker output) ---
     doc.querySelectorAll('trkpt').forEach(pt => {
@@ -371,12 +368,13 @@ function parseGPX(text) {
       if (!isNaN(lat) && !isNaN(lon))
         track.push({
           lat, lon,
-          ele: parseFloat(pt.querySelector('ele')?.textContent) || 0,
+          ele:  parseFloat(pt.querySelector('ele')?.textContent) || 0,
           time: pt.querySelector('time')?.textContent || '',
         });
     });
 
     // --- Route points: <rte><rtept> — treat as track when no trkpt found ---
+    // (Common in GPX 1.0 files and GPX exports from devices like Garmin/ExpertGPS)
     if (track.length === 0) {
       routeName = doc.querySelector('rte > name')?.textContent || '';
       doc.querySelectorAll('rtept').forEach(pt => {
@@ -385,7 +383,7 @@ function parseGPX(text) {
         if (!isNaN(lat) && !isNaN(lon))
           track.push({
             lat, lon,
-            ele: parseFloat(pt.querySelector('ele')?.textContent) || 0,
+            ele:  parseFloat(pt.querySelector('ele')?.textContent) || 0,
             time: pt.querySelector('time')?.textContent || '',
             name: pt.querySelector('name')?.textContent || '',
           });
@@ -401,8 +399,8 @@ function parseGPX(text) {
           lat, lon,
           name: wpt.querySelector('name')?.textContent || 'POI',
           desc: wpt.querySelector('desc')?.textContent || '',
-          sym: wpt.querySelector('sym')?.textContent || '',
-          ele: parseFloat(wpt.querySelector('ele')?.textContent) || null,
+          sym:  wpt.querySelector('sym')?.textContent  || '',
+          ele:  parseFloat(wpt.querySelector('ele')?.textContent) || null,
         });
     });
 
@@ -412,6 +410,7 @@ function parseGPX(text) {
     return null;
   }
 }
+
 // ============================================================
 //  DASHBOARD
 // ============================================================
@@ -884,38 +883,20 @@ function renderGPSMap() {
 
   // --- Draw waypoints ---
   _gpsWpts = L.layerGroup();
-  // --- Draw waypoints --- (Replace the truncated part with this)
-  _gpsWpts = L.layerGroup();
   waypoints.forEach(wpt => {
     // Build a rich popup with name + desc + elevation
-    let popupHtml = `
-      <div style="font-family: sans-serif; min-width: 120px;">
-        <b style="color:#00d4ff; display:block; margin-bottom:4px;">${esc(wpt.name)}</b>
-        ${wpt.desc ? `<div style="font-size: 0.9em; margin-bottom:4px;">${esc(wpt.desc)}</div>` : ''}
-        ${wpt.ele !== null ? `<div style="font-size: 0.8em; color: #888;">Elevation: ${wpt.ele.toFixed(1)}m</div>` : ''}
-      </div>
-    `;
+    let popupHtml = `<b style="color:var(--primary)">${esc(wpt.name)}</b>`;
+    if (wpt.desc && wpt.desc !== wpt.name)
+      popupHtml += `<br><span style="color:#8888aa;font-size:0.85em">${esc(wpt.desc)}</span>`;
+    if (wpt.sym)
+      popupHtml += `<br><span style="color:#6b6b8a;font-size:0.8em">&#128205; ${esc(wpt.sym)}</span>`;
+    if (wpt.ele)
+      popupHtml += `<br><span style="color:#6b6b8a;font-size:0.8em">&#8679; ${wpt.ele.toFixed(1)} m</span>`;
 
-    // Drop a yellow marker for waypoints
-    L.circleMarker([wpt.lat, wpt.lon], {
-      radius: 6,
-      fillColor: '#ffa502',
-      color: '#222',
-      weight: 1,
-      fillOpacity: 0.8
-    })
-    .bindPopup(popupHtml)
-    .addTo(_gpsWpts);
+    L.marker([wpt.lat, wpt.lon])
+     .bindPopup(popupHtml)
+     .addTo(_gpsWpts);
   });
-
-  _gpsWpts.addTo(map);
-
-  // Fallback: If there was no track line, make sure we center the map on the waypoints
-  if (track.length === 0 && waypoints.length > 0) {
-    const bounds = L.latLngBounds(waypoints.map(wpt => [wpt.lat, wpt.lon]));
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }
-}
   _gpsWpts.addTo(map);
 
   // If no track but have waypoints — fit to waypoints
